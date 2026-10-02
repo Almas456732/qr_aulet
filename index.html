@@ -18,6 +18,7 @@
            background:var(--ink); color:#fff; cursor:pointer; }
   button:focus-visible { outline:3px solid #7aa2ff; outline-offset:2px; }
   button:disabled { opacity:.6; }
+  .turn { background:#0b6e4f; color:#fff; border-radius:12px; padding:16px; font-size:20px; font-weight:700; }
   .err { color:#b00020; margin-top:12px; }
   [hidden] { display:none !important; }
 </style>
@@ -34,7 +35,8 @@
   <section id="ticket" hidden>
     <div class="muted">Сіздің кезек нөміріңіз</div>
     <div class="num" id="myNum">–</div>
-    <p>Кезегіңізді күтіңіз.</p>
+    <p id="waitTxt">Кезегіңізді күтіңіз.</p>
+    <div class="turn" id="turn" hidden>Сіздің кезегіңіз келді.</div>
   </section>
 
   <div class="err" id="err" hidden></div>
@@ -51,6 +53,7 @@ const TXT_JOIN = 'Жоба бойынша кеңес алу үшін кезек�
 const TXT_TICKET = 'Сіз жоба бойынша кеңес алуға кезекке тіркелдіңіз.';
 const TXT_DONE = 'Қызмет көрсету аяқталды. Рақмет!';
 let timer = null;
+let notified = false;
 
 function showError(msg) { $('err').textContent = msg; $('err').hidden = !msg; }
 function saved() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
@@ -70,6 +73,10 @@ async function refresh(id) {
   if (!r || r.status === 'cancelled') { forget(); showJoin(); return; }
   if (r.status === 'done') { forget(); showJoin(TXT_DONE); return; }
   $('myNum').textContent = r.ticket_number;
+  const called = r.status === 'called';
+  $('turn').hidden = !called;
+  $('waitTxt').hidden = called;
+  if (called && !notified) { notified = true; try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch {} }
 }
 
 function showTicket(id) {
