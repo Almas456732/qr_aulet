@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Электронная очередь</title>
+<style>
+  :root { --bg:#eef1f5; --ink:#14213d; --muted:#5b6478; --ok:#0b6e4f; --card:#fff; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; padding:16px; }
+  main { width:100%; max-width:380px; background:var(--card); border-radius:16px; padding:28px 24px; text-align:center;
+         box-shadow:0 1px 3px rgba(20,33,61,.12); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .muted { color:var(--muted); margin:0 0 20px; }
+  .num { font-size:96px; font-weight:800; line-height:1; margin:8px 0; letter-spacing:-2px; }
+  button { width:100%; font:inherit; font-weight:600; padding:16px; border:0; border-radius:12px;
+           background:var(--ink); color:#fff; cursor:pointer; }
+  button:focus-visible { outline:3px solid #7aa2ff; outline-offset:2px; }
+  button:disabled { opacity:.6; }
+  .row { display:flex; justify-content:space-between; padding:10px 0; border-top:1px solid #e3e7ee; }
+  .turn { background:var(--ok); color:#fff; border-radius:12px; padding:14px; font-weight:700; margin-top:12px; }
+  .err { color:#b00020; margin-top:12px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Электронная очередь</h1>
+  <p class="muted" id="sub">Нажмите, чтобы встать в очередь</p>
+
+  <section id="join">
+    <button id="takeBtn">Встать в очередь</button>
+  </section>
+
+  <section id="ticket" hidden>
+    <div class="muted">Ваш номер</div>
+    <div class="num" id="myNum">–</div>
+    <div class="row"><span>Перед вами</span><b id="ahead">–</b></div>
+    <div class="row"><span>Сейчас обслуживается</span><b id="serving">–</b></div>
+    <div class="turn" id="turn" hidden>Ваша очередь, подойдите к окну</div>
+  </section>
+
+  <div class="err" id="err" hidden></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const slug = new URLSearchParams(location.search).get('q') || 'main';
+const KEY = 'ticket:' + slug;
+const $ = id => document.getElementById(id);
+let timer = null;
+
+function showError(msg) { $('err').textContent = msg; $('err').hidden = !msg; }
+function saved() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
+function forget() { try { localStorage.removeItem(KEY); } catch {} }
+
+function showJoin() {
+  clearInterval(timer);
+  $('join').hidden = false; $('ticket').hidden = true;
+  $('sub').textContent = 'Нажмите, чтобы встать в очередь';
+}
+
+async function refresh(id) {
+  const { data, error } = await db.rpc('get_ticket_status', { p_ticket_id: id });
+  if (error) { showError('Нет связи. Пробуем снова…'); return; }
+  showError('');
+  const r = data && data[0];
+  if (!r || r.status === 'cancelled') { forget(); showJoin(); return; }
+  $('myNum').textContent = r.ticket_number;
+  $('ahead').textContent = r.status === 'waiting' ? r.people_ahead : 0;
+  $('serving').textContent = r.now_serving || '–';
+  const called = r.status === 'called';
+  $('turn').hidden = !called;
+  if (r.status === 'done') {
+    $('sub').textContent = 'Обслуживание завершено. Спасибо!';
+    clearInterval(timer);
+    forget();
+    $('join').hidden = false;
+  }
+}
+
+function showTicket(id) {
+  $('join').hidden = true; $('ticket').hidden = false;
+  $('sub').textContent = 'Не закрывайте страницу, номер обновляется сам';
+  refresh(id);
+  clearInterval(timer);
+  timer = setInterval(() => refresh(id), 3000);
+}
+
+$('takeBtn').addEventListener('click', async () => {
+  $('takeBtn').disabled = true; showError('');
+  const { data, error } = await db.rpc('take_ticket', { p_slug: slug });
+  $('takeBtn').disabled = false;
+  if (error || !data || !data[0]) { showError('Не удалось встать в очередь. Проверьте ссылку или попробуйте ещё раз.'); return; }
+  const id = data[0].ticket_id;
+  try { localStorage.setItem(KEY, JSON.stringify({ id })); } catch {}
+  showTicket(id);
+});
+
+const s = saved();
+if (s && s.id) showTicket(s.id);
+</script>
+</body>
+</html>
